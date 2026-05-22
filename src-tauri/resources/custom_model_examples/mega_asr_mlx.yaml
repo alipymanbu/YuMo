@@ -35,6 +35,6 @@ load:
   function: mega_asr_mlx.MegaASRMLX
   kwargs:
     model_dir: "{paths.model_dir}"
-
-transcribe_method: transcribe
-language_param: language
+    use_lora: true
+    router_threshold: 0.5
+    max_new_tokens: 256
