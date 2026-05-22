@@ -27,7 +27,7 @@ pip_packages:
 
 download:
   hf_repos:
-    - voiceink/mega-asr-mlx
+    - carloshuang1224/mega-asr-mlx
   paths:
     model_dir: "{repo_dirs[0]}"
 
