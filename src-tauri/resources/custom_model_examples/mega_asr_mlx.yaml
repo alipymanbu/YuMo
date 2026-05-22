@@ -1,0 +1,40 @@
+# Mega-ASR MLX — Custom model spec for VoiceInk (语墨)
+# Source: https://huggingface.co/carloshuang1224/mega-asr-mlx
+# PyPI: https://pypi.org/project/mega-asr-mlx/
+#
+# 使用方式：
+#   1. 将此文件复制到 ~/.voiceink/custom_models/
+#   2. 打开语墨 → Settings → Models → Custom Models → 刷新
+#   3. 点击下载/加载
+
+schema_version: 1
+id: custom-mega-asr-mlx
+name: Mega-ASR MLX
+description: >
+  Fine-tuned Qwen3-ASR 1.7B with Mega-ASR LoRA adapters for Chinese/English
+  code-switching speech recognition. Optimized for Apple Silicon via MLX.
+size_mb: 4400
+languages:
+  zh: 中文
+  en: English
+speed: 7
+accuracy: 9
+recommended: true
+
+python_module: mega_asr_mlx
+pip_packages:
+  - mega-asr-mlx
+
+download:
+  hf_repos:
+    - voiceink/mega-asr-mlx
+  paths:
+    model_dir: "{repo_dirs[0]}"
+
+load:
+  function: mega_asr_mlx.MegaASRMLX
+  kwargs:
+    model_dir: "{paths.model_dir}"
+
+transcribe_method: transcribe
+language_param: language
