@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '../lib/logger';
+import { broadcast } from '../lib/broadcast';
 
 export interface ModelInfo {
   id: string;
@@ -101,6 +102,9 @@ const useAppStore = create<AppState>((set, get) => ({
   updateSetting: async (key: string, value: string) => {
     await invoke('update_setting', { key, value });
     set({ settings: { ...get().settings, [key]: value } });
+    // Notify other windows (e.g. the recorder float) so sprite / size
+    // changes take effect live without an app restart.
+    broadcast('settings-changed', key);
   },
 
   selectModel: async (modelId: string) => {
