@@ -7055,7 +7055,7 @@ dependencies = [
 
 [[package]]
 name = "yumo"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "cocoa",
  "dirs 5.0.1",
