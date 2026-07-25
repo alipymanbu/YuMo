@@ -19,6 +19,45 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+# ---------------------------------------------------------------------------
+# Proxy env inheritance — GUI apps don't get shell profile vars
+# ---------------------------------------------------------------------------
+
+_PROXY_VARS = ("http_proxy", "https_proxy", "all_proxy",
+               "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+               "no_proxy", "NO_PROXY")
+
+
+def _inherit_shell_proxy_env():
+    """Inject proxy env vars from the user's login shell.
+
+    macOS GUI apps launched via Finder/Spotlight inherit env from launchd,
+    not the user's shell profile. huggingface_hub uses requests which reads
+    http_proxy/https_proxy from os.environ. This function runs
+    ``$SHELL -l -c 'env'`` to capture shell-profile proxy settings and
+    injects them into os.environ (without overwriting existing values).
+    """
+    # Don't clobber existing env vars (e.g. set by the Rust side explicitly)
+    missing = [v for v in _PROXY_VARS if v not in os.environ or not os.environ[v]]
+    if not missing:
+        return
+
+    shell = os.environ.get("SHELL") or "/bin/bash"
+    try:
+        result = subprocess.run(
+            [shell, "-l", "-i", "-c", "env"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception:
+        return
+
+    for line in result.stdout.splitlines():
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        if key in missing:
+            os.environ[key] = value
+
 
 # ---------------------------------------------------------------------------
 # Spec parsing and small utils
@@ -32,19 +71,45 @@ def parse_spec(spec_path: str) -> dict:
 
 
 def split_pip_pkg_name(pkg_spec: str) -> str:
-    """'mimo_mlx>=0.1.0' -> 'mimo_mlx'. Handles >=, ==, ~=, <, >, !=, ;markers."""
-    return re.split(r"[<>=!~;\s]", pkg_spec, 1)[0].strip()
+    """Extract the importable package name from a pip requirement spec.
+
+    Normal specs: 'mimo_mlx>=0.1.0' -> 'mimo_mlx'
+    Git URLs: 'git+https://github.com/Foo/bar.git' -> 'bar'
+    """
+    s = pkg_spec.strip()
+    # Git URL: extract the repo name (last path segment, minus .git suffix).
+    if s.startswith(("git+", "git@")) or "://" in s:
+        tail = s.rsplit("/", 1)[-1]
+        if tail.endswith(".git"):
+            tail = tail[:-4]
+        return tail.replace("-", "_")
+    return re.split(r"[<>=!~;\s]", s, 1)[0].strip()
 
 
-def resolve_attr(module_name: str, dotted_path: str):
+def resolve_attr(module_name: str, dotted_path: str, custom_models_dir: str = ""):
     """Resolve 'pkg.submod.func' -> callable, after importing pkg.
 
     The first segment of the dotted path may equal the module name (so
     'mimo_mlx.load_asr' and 'load_asr' both work). Attribute lookup
     falls back to importing as a deeper submodule when an attribute is
     actually a module.
+
+    If ``custom_models_dir`` is given and ``module_name`` matches a
+    subdirectory containing ``__init__.py`` there, the directory is
+    prepended to ``sys.path`` so a local plugin package (no pip install
+    needed) can be imported just like an installed package.
     """
     import importlib
+
+    # Local plugin package support: if the module name matches a directory
+    # under custom_models_dir with an __init__.py, make it importable.
+    if custom_models_dir:
+        local_pkg = Path(custom_models_dir) / module_name / "__init__.py"
+        if local_pkg.exists():
+            parent = str(Path(custom_models_dir))
+            if parent not in sys.path:
+                sys.path.insert(0, parent)
+
     parts = dotted_path.split(".")
     if parts[0] == module_name:
         attrs = parts[1:]
@@ -98,11 +163,26 @@ def check_custom_dependencies(spec_path: str) -> dict:
     """
     import importlib.util
     spec = parse_spec(spec_path)
-    pip_packages = spec.get("pip_packages") or [spec["python_module"]]
+    pip_packages = spec.get("pip_packages")
+    # No pip_packages declared — if python_module is a local plugin dir,
+    # there's nothing to import-check. If python_module is a pip name, fall
+    # back to it.
+    if not pip_packages:
+        pm = spec.get("python_module", "")
+        if pm and not (Path(spec_path).parent / pm / "__init__.py").exists():
+            pip_packages = [pm]
+        else:
+            return {"installed": [], "missing": [], "all_installed": True}
 
     installed, missing = [], []
+    # User-declared import name overrides inference (handles git URLs where
+    # repo name != package name, e.g. mano-asr.git installs as 'manoasr').
+    import_name_override = spec.get("pip_import_name")
     for pkg_spec in pip_packages:
-        name = split_pip_pkg_name(pkg_spec)
+        if import_name_override:
+            name = import_name_override
+        else:
+            name = split_pip_pkg_name(pkg_spec)
         if importlib.util.find_spec(name) is not None:
             installed.append(name)
         else:
@@ -120,7 +200,10 @@ def install_custom_dependencies(spec_path: str) -> dict:
     Returns: {success: bool, stdout: str, stderr: str, error: str|None}
     """
     spec = parse_spec(spec_path)
-    pkgs = spec.get("pip_packages") or [spec["python_module"]]
+    pkgs = spec.get("pip_packages")
+    # Local plugin packages (no pip_packages) need no installation.
+    if not pkgs:
+        return {"success": True, "stdout": "", "stderr": "", "error": None}
     cmd = [sys.executable, "-m", "pip", "install", *pkgs]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if result.returncode == 0:
@@ -151,12 +234,18 @@ def download_custom_model(
     spec = parse_spec(spec_path)
     download = spec.get("download")
     if not download:
+        # Write an empty sidecar so load_custom_model doesn't fail on the
+        # paths.json existence check. Local plugin packages typically have
+        # no download step but still go through the load path.
+        cache_dir = Path(custom_models_dir) / ".cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        sidecar = cache_dir / f"{spec['id']}.paths.json"
+        sidecar.write_text("{}")
         return {"success": True, "paths": {}, "note": "no download step declared"}
 
     paths_out: dict = {}
-
     if "function" in download:
-        func = resolve_attr(spec["python_module"], download["function"])
+        func = resolve_attr(spec["python_module"], download["function"], custom_models_dir)
         rendered = render_kwargs(download.get("kwargs", {}), voiceink_models_dir)
         result = func(**rendered)
         returns = download.get("returns", "tuple")
@@ -176,6 +265,14 @@ def download_custom_model(
             raise ValueError(f"unknown returns kind: {returns}")
     elif "hf_repos" in download:
         from huggingface_hub import snapshot_download
+        # Allow per-spec or env-var HF endpoint override (e.g. China mirror).
+        endpoint = download.get("hf_endpoint") or os.environ.get("HF_ENDPOINT")
+        if endpoint:
+            os.environ["HF_ENDPOINT"] = endpoint
+        # GUI apps launched from Finder/Spotlight don't inherit shell profile
+        # env vars (http_proxy, https_proxy, all_proxy). Read them from the
+        # user's login shell so huggingface_hub can use the proxy.
+        _inherit_shell_proxy_env()
         repo_dirs = []
         for repo in download["hf_repos"]:
             sanitized = repo.replace("/", "--")
@@ -215,7 +312,7 @@ def load_custom_model(spec_path: str, voiceink_models_dir: str, custom_models_di
     load = spec["load"]
     rendered = render_kwargs(load.get("kwargs", {}), voiceink_models_dir, paths=paths)
 
-    func = resolve_attr(spec["python_module"], load["function"])
+    func = resolve_attr(spec["python_module"], load["function"], custom_models_dir)
     model = func(**rendered)
     model._daemon_model_type = "custom"
     model._daemon_custom_spec = spec

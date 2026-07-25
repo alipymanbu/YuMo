@@ -336,11 +336,26 @@ pub fn run() {
 
                 let mut warmup_repo: Option<String> = None;
                 if !selected_model.is_empty() {
-                    let all = transcriber::all_models(&app_state.paths.models_dir);
+                    let all = transcriber::all_models_with_custom_dir(
+                        &app_state.paths.models_dir,
+                        &app_state.paths.data_dir.join("custom_models"),
+                    );
                     if let Some(model) = all.iter().find(|m| m.id == selected_model) {
-                        if let transcriber::ModelProvider::MlxFunASR = model.provider {
+                        if model.provider.needs_daemon() {
                             if let Some(repo) = &model.model_repo {
-                                if transcriber::check_mlx_model_downloaded(repo) {
+                                // For built-in MLX models: check if downloaded.
+                                // For custom YAML plugins: the repo is the YAML
+                                // path — always "downloaded" (code exists).
+                                let is_ready = if model.provider == yumo_core::transcriber::ModelProvider::Custom {
+                                    // Custom YAML plugin: check sidecar exists (download done)
+                                    // and deps are installed (pip packages importable).
+                                    let custom_dir = app_state.paths.data_dir.join("custom_models");
+                                    let sidecar = custom_dir.join(".cache").join(format!("{}.paths.json", model.id));
+                                    sidecar.exists()
+                                } else {
+                                    transcriber::check_mlx_model_downloaded(repo)
+                                };
+                                if is_ready {
                                     warmup_repo = Some(repo.clone());
                                 }
                             }
@@ -353,11 +368,11 @@ pub fn run() {
                     let warmup_id = selected_model.clone();
                     std::thread::spawn(move || {
                         let daemon = handle.state::<daemon::DaemonManager>();
-                        info!("[warmup] starting daemon for MLX model: id={} repo={}", warmup_id, repo);
+                        info!("[warmup] starting daemon for model: id={} repo={}", warmup_id, repo);
                         match daemon.start() {
                             Ok(()) => {
                                 info!("[warmup] daemon started, loading model...");
-                                let cmd = serde_json::json!({"action": "load", "model": &repo});
+                                let cmd = yumo_core::custom_models::build_load_command(&repo);
                                 match daemon.send_command(&cmd) {
                                     Ok(resp) if resp.status == "success" || resp.status == "loaded" || resp.status == "download_complete" => {
                                         daemon.set_loaded_model(Some(warmup_id.clone()));

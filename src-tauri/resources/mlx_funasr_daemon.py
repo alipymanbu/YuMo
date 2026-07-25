@@ -1028,6 +1028,12 @@ def main():
                 # Unload previous model before loading a different one
                 if model is not None:
                     log(f"Unloading previous model: {model_repo}")
+                    if hasattr(model, "stop"):
+                        try:
+                            log("Calling model.stop() before model switch")
+                            model.stop()
+                        except Exception as e:
+                            log(f"model.stop() raised during switch: {e}")
                     del model
                     model = None
                     model_repo = None
@@ -1098,6 +1104,15 @@ def main():
                 send_response({"status": "error", "error": str(e)})
 
         elif action == "unload":
+            # If the model has a stop() method (e.g. a local plugin that
+            # spawned an external HTTP ASR service), call it so the child
+            # process is cleaned up before we drop the reference.
+            if model is not None and hasattr(model, "stop"):
+                try:
+                    log("Calling model.stop() for cleanup")
+                    model.stop()
+                except Exception as e:
+                    log(f"model.stop() raised: {e}")
             model = None
             model_repo = None
             gc.collect()
@@ -1111,6 +1126,12 @@ def main():
             send_response({"status": "unloaded"})
 
         elif action == "quit":
+            if model is not None and hasattr(model, "stop"):
+                try:
+                    log("Calling model.stop() on daemon quit")
+                    model.stop()
+                except Exception as e:
+                    log(f"model.stop() raised on quit: {e}")
             log("Shutting down")
             send_response({"status": "bye"})
             break
