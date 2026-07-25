@@ -25,6 +25,10 @@ interface Props {
   height?: number;
   timePerFrame?: number;
   windDownMs?: number;
+  /** First frame index to animate (inclusive), default 0 */
+  frameStart?: number;
+  /** Last frame index to animate (inclusive), default frameCount-1 */
+  frameEnd?: number;
 }
 
 function drawFrame(
@@ -54,6 +58,8 @@ export default function SpriteAnimation({
   height = 160,
   timePerFrame = 0.08,
   windDownMs = 3000,
+  frameStart = 0,
+  frameEnd,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -67,23 +73,25 @@ export default function SpriteAnimation({
   }, [imageSrc]);
 
   // Draw first frame when image loads
+  const fEnd = frameEnd ?? manifest.frameCount - 1;
   useEffect(() => {
     if (image && canvasRef.current) {
-      drawFrame(canvasRef.current, image, manifest, 0);
+      drawFrame(canvasRef.current, image, manifest, frameStart);
     }
-  }, [image, manifest]);
+  }, [image, manifest, frameStart]);
 
   // Animation loop using setInterval (works in unfocused windows, unlike rAF)
   useEffect(() => {
     if (!image || !canvasRef.current) return;
 
     const canvas = canvasRef.current;
-    let frame = 0;
+    let frame = frameStart;
     const intervalMs = timePerFrame * 1000;
+    const rangeSize = fEnd - frameStart + 1;
 
     // Always start animating immediately
     const id = setInterval(() => {
-      frame = (frame + 1) % manifest.frameCount;
+      frame = ((frame - frameStart + 1) % rangeSize) + frameStart;
       drawFrame(canvas, image, manifest, frame);
     }, intervalMs);
 
@@ -92,7 +100,7 @@ export default function SpriteAnimation({
     if (!isPlaying) {
       windDownTimer = setTimeout(() => {
         clearInterval(id);
-        drawFrame(canvas, image, manifest, 0);
+        drawFrame(canvas, image, manifest, frameStart);
       }, windDownMs);
     }
 

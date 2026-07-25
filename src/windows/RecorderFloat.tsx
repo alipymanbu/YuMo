@@ -12,6 +12,7 @@ import {
   PIPELINE_LABEL_KEYS,
   PIPELINE_COLORS,
   PIPELINE_ANIMATIONS,
+  PIPELINE_SPRITE_FRAMES,
   parsePipelineState,
 } from '../lib/pipeline';
 import SpriteAnimation, { type SpriteManifest } from '../components/SpriteAnimation';
@@ -34,8 +35,9 @@ export default function RecorderFloat() {
   // Sprite
   const [spriteManifest, setSpriteManifest] = useState<SpriteManifest | null>(null);
   const [spriteImageSrc, setSpriteImageSrc] = useState<string | null>(null);
+  const [spriteId, setSpriteId] = useState('');
   const [spriteSize, setSpriteSize] = useState(180);
-
+  const [frameMaps, setFrameMaps] = useState<Record<string, Record<string, [number, number]>>>({});
   const loadSprite = useCallback(async () => {
     invoke('frontend_log', { level: 'info', message: '[recorder] loadSprite start' });
     try {
@@ -50,10 +52,15 @@ export default function RecorderFloat() {
       } catch { /* use default */ }
 
       if (settings.sprite_size) setSpriteSize(settings.sprite_size);
+      try {
+        const fm = JSON.parse((settings as Record<string,string>).sprite_frame_maps || '{}');
+        setFrameMaps(fm);
+      } catch { /* ignore */ }
       const selectedId = settings.selected_sprite_id;
       const target = (selectedId && sprites.find(s => s.dirId === selectedId)) || sprites[0];
 
       setSpriteManifest(target);
+      setSpriteId(target.dirId);
       try {
         const uri = await invoke<string>('get_sprite_image', { dirId: target.dirId, fileName: 'sprite_processed.png' });
         invoke('frontend_log', { level: 'info', message: `[recorder] sprite image loaded, len=${uri.length}` });
@@ -66,11 +73,9 @@ export default function RecorderFloat() {
   }, []);
 
   useEffect(() => { loadSprite(); }, [loadSprite]);
-
-  // Reload sprite when settings change
   useEffect(() => {
     const cleanup = onBroadcast('settings-changed', (key) => {
-      if (key === 'selected_sprite_id' || key === 'sprite_size') {
+      if (key === 'selected_sprite_id' || key === 'sprite_size' || key === 'sprite_frame_maps') {
         loadSprite();
       }
     });
@@ -163,9 +168,10 @@ export default function RecorderFloat() {
   };
 
   // Dragging handled natively via NSWindow setMovableByWindowBackground
-
-  const hasSprite = spriteManifest && spriteImageSrc;
-  const isRecording = state === PIPELINE_RECORDING;
+  const hasSprite = !!(spriteManifest && spriteImageSrc);
+  const isIdle = state === PIPELINE_IDLE;
+  const configuredFrames = spriteId ? (frameMaps[spriteId] || {}) : {};
+  const spriteFrames = (configuredFrames[state] as [number, number] | undefined) || PIPELINE_SPRITE_FRAMES[state];
 
   const color = PIPELINE_COLORS[state];
   const animation = PIPELINE_ANIMATIONS[state];
@@ -190,9 +196,11 @@ export default function RecorderFloat() {
         <SpriteAnimation
           manifest={spriteManifest}
           imageSrc={spriteImageSrc}
-          isPlaying={isRecording}
+          isPlaying={!isIdle}
           width={spriteSize}
           height={spriteSize}
+          frameStart={spriteFrames?.[0] ?? 0}
+          frameEnd={spriteFrames?.[1]}
         />
       ) : (
         <div style={{
@@ -231,10 +239,9 @@ export default function RecorderFloat() {
           animation,
         }} />
         <span>{PIPELINE_LABEL_KEYS[state] ? t(PIPELINE_LABEL_KEYS[state]) : ''}</span>
-        {isRecording && (
+        {state === PIPELINE_RECORDING && (
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatTime(duration)}</span>
         )}
-        {/* Cancel button — no drag region so it's clickable */}
         <span
           data-cancel
           onClick={(e) => {

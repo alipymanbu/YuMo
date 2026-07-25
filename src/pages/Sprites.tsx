@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Flex, Space, Button, Slider, Typography, message } from 'antd';
+import { Flex, Space, Button, Slider, Typography, message, InputNumber } from 'antd';
 import { FolderOpenOutlined, FileZipOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { invoke, formatError, logEvent } from '../lib/logger';
@@ -13,14 +13,13 @@ type SpriteEntry = SpriteManifest & { dirId: string };
 
 export default function Sprites() {
   const { t } = useTranslation();
-  const { updateSetting } = useAppStore();
+  const { updateSetting, settings } = useAppStore();
   const [sprites, setSprites] = useState<SpriteEntry[]>([]);
   const [spriteSrcs, setSpriteSrcs] = useState<Record<string, string>>({});
   const [selectedSpriteId, setSelectedSpriteId] = useState('');
   const [spriteSize, setSpriteSize] = useState(180);
   const [bgThreshold, setBgThreshold] = useState(0.18);
   const [bgProcessing, setBgProcessing] = useState(false);
-
   const loadSprites = useCallback(async () => {
     try {
       const list = await invoke<SpriteEntry[]>('list_sprites');
@@ -122,6 +121,30 @@ export default function Sprites() {
     setBgProcessing(false);
   };
 
+
+  // Sprite frame range mapping per state
+  type FrameMap = Record<string, [number, number]>;
+  type AllFrameMaps = Record<string, FrameMap>;
+  const [frameMaps, setFrameMaps] = useState<AllFrameMaps>(() => {
+    try { return JSON.parse((settings as Record<string,unknown>).sprite_frame_maps as string || '{}'); }
+    catch { return {}; }
+  });
+
+  const handleFrameChange = async (state: string, startOrEnd: 'start' | 'end', value: number | null) => {
+    if (!selectedSpriteId || value == null) return;
+    const current = frameMaps[selectedSpriteId] || {};
+    const range: [number, number] = [...(current[state] || [0, 0])] as [number, number];
+    range[startOrEnd === 'start' ? 0 : 1] = value;
+    const updated = { ...frameMaps, [selectedSpriteId]: { ...current, [state]: range } };
+    setFrameMaps(updated);
+    await updateSetting('sprite_frame_maps', JSON.stringify(updated));
+  };
+
+  const selectedFrames = selectedSpriteId ? (frameMaps[selectedSpriteId] || {}) : {};
+  const stateLabels: [string, string][] = [
+    ['idle', '空闲'], ['recording', '录音'], ['filtering', '过滤'],
+    ['processing', '处理'], ['transcribing', '转录'], ['pasting', '粘贴'],
+  ];
   return (
     <Flex vertical gap="large" style={{ width: '100%' }}>
       <Typography.Title level={3}>{t('sprites.title')}</Typography.Title>
@@ -179,6 +202,74 @@ export default function Sprites() {
                 {t('settings.spriteBgRemovalHint')}
               </Text>
             </div>
+
+            {selectedSpriteId && (
+              <div>
+                <Text strong style={{ display: 'block', marginBottom: 8 }}>帧映射 (Frame Map)</Text>
+                {stateLabels.map(([key, label]) => {
+                  const frames = selectedFrames[key] || [0, 0];
+                  return (
+                    <Flex key={key} align="center" gap={8} style={{ marginBottom: 4 }}>
+                      <Text style={{ minWidth: 48 }}>{label}</Text>
+                      <InputNumber
+                        size="small" min={0} max={99}
+                        value={frames[0]} style={{ width: 56 }}
+                        onChange={(v) => handleFrameChange(key, 'start', v)}
+                      />
+                      <Text type="secondary">–</Text>
+                      <InputNumber
+                        size="small" min={0} max={99}
+                        value={frames[1]} style={{ width: 56 }}
+                        onChange={(v) => handleFrameChange(key, 'end', v)}
+                      />
+                    </Flex>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Frame preview strip */}
+            {selectedSpriteId && spriteSrcs[selectedSpriteId] && (() => {
+              const sprite = sprites.find(s => s.dirId === selectedSpriteId);
+              if (!sprite) return null;
+              const frameSize = 36;
+              const gap = 4;
+              return (
+                <div style={{ marginTop: 8 }}>
+                  <Text strong style={{ display: 'block', marginBottom: 4 }}>帧预览</Text>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap }}>
+                    {Array.from({ length: sprite.frameCount }, (_, i) => (
+                      <div key={i} style={{ textAlign: 'center' }}>
+                        <canvas
+                          ref={(el) => {
+                            if (!el) return;
+                            const img = new Image();
+                            img.onload = () => {
+                              const ctx = el.getContext('2d');
+                              if (!ctx) return;
+                              const col = i % sprite.columns;
+                              const row = Math.floor(i / sprite.columns);
+                              el.width = frameSize;
+                              el.height = frameSize;
+                              ctx.imageSmoothingEnabled = false;
+                              ctx.drawImage(
+                                img,
+                                col * sprite.frameWidth, row * sprite.frameHeight,
+                                sprite.frameWidth, sprite.frameHeight,
+                                0, 0, frameSize, frameSize,
+                              );
+                            };
+                            img.src = spriteSrcs[selectedSpriteId];
+                          }}
+                          style={{ border: '1px solid #d9d9d9', borderRadius: 4 }}
+                        />
+                        <Text type="secondary" style={{ fontSize: 10, display: 'block' }}>{i}</Text>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </Flex>
         )}
       </Flex>
