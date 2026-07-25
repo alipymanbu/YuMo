@@ -24,6 +24,7 @@ interface Props {
   /** True when this model is the currently selected one in app settings. */
   isActive: boolean;
   onChange: () => void;
+  onEdit: (specPath: string) => void;
 }
 
 type InstallResult = {
@@ -38,8 +39,7 @@ type DownloadResult = {
   paths?: Record<string, string>;
   error?: string;
 };
-
-export function CustomModelCard({ status, isActive, onChange }: Props) {
+export function CustomModelCard({ status, isActive, onChange, onEdit }: Props) {
   const { t } = useTranslation();
   const selectModel = useAppStore((s) => s.selectModel);
   const [busy, setBusy] = useState(false);
@@ -197,6 +197,13 @@ export function CustomModelCard({ status, isActive, onChange }: Props) {
       });
     }
   }
+  // Edit button — available for all custom models (depsMissing/notDownloaded/ready)
+  actions.push({
+    key: 'edit',
+    label: t('models.action.edit'),
+    disabled: busy,
+    onClick: () => onEdit(spec.sourcePath),
+  });
   actions.push({
     key: 'delete',
     label: t('models.action.delete'),

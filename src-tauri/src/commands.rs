@@ -1872,7 +1872,54 @@ pub fn custom_open_dir(app: AppHandle) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Copy a built-in example YAML from the app bundle to ~/.voiceink/custom_models/.
+/// List available example specs in the app bundle's custom_model_examples/ dir.
+/// Returns [{ name, isDir }] for each entry (YAML files and plugin directories).
+#[tauri::command]
+pub fn custom_list_examples(app: AppHandle) -> Result<Vec<Value>, AppError> {
+    let res_dir = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|d| d.join("resources").join("custom_model_examples"));
+    let dev_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join("custom_model_examples");
+
+    let base = res_dir
+        .into_iter()
+        .chain(std::iter::once(dev_dir))
+        .find(|d| d.exists())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+    let mut examples: Vec<Value> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&base) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // Skip hidden files and the tests/ directory
+            if name.starts_with('.') || name == "tests" {
+                continue;
+            }
+            let is_yaml = name.ends_with(".yaml") || name.ends_with(".yml");
+            let is_dir = entry.path().is_dir();
+            if is_yaml || is_dir {
+                examples.push(serde_json::json!({
+                    "name": name,
+                    "isDir": is_dir,
+                }));
+            }
+        }
+    }
+    examples.sort_by(|a, b| {
+        a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or(""))
+    });
+    Ok(examples)
+}
+
+/// Copy a built-in example from the app bundle to ~/.voiceink/custom_models/.
+///
+/// Supports both single YAML files and plugin directory packages (e.g.
+/// `mano_asr/` containing `__init__.py`). When `file_name` resolves to a
+/// directory, it is copied recursively.
 #[tauri::command]
 pub fn custom_import_example(
     file_name: String,
@@ -1921,11 +1968,82 @@ pub fn custom_import_example(
     let dest_dir = custom_models_dir();
     std::fs::create_dir_all(&dest_dir)?;
     let dest = dest_dir.join(&file_name);
-    std::fs::copy(src, &dest)?;
+    if src.is_dir() {
+        copy_dir_recursive(src, &dest)?;
+    } else {
+        std::fs::copy(src, &dest)?;
+    }
     info!("[cmd] custom_import_example {} -> {}", src.display(), dest.display());
 
     Ok(serde_json::json!({
         "destPath": dest.to_string_lossy(),
+    }))
+}
+
+/// Recursively copy a directory tree. Errors on any file copy failure.
+fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> Result<(), AppError> {
+    std::fs::create_dir_all(dest)?;
+    for entry in std::fs::read_dir(src)
+        .map_err(|e| AppError::Io(format!("read_dir {}: {}", src.display(), e)))?
+    {
+        let entry = entry.map_err(|e| AppError::Io(format!("read entry: {}", e)))?;
+        let ft = entry.file_type()
+            .map_err(|e| AppError::Io(format!("file_type: {}", e)))?;
+        let from = entry.path();
+        let to = dest.join(entry.file_name());
+        if ft.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)
+                .map_err(|e| AppError::Io(format!("copy {}: {}", from.display(), e)))?;
+        }
+    }
+    Ok(())
+}
+
+/// Create a new custom model: write YAML spec + optional Python plugin code.
+///
+/// `yaml_content` is the full YAML spec text. `plugin_code` is the Python
+/// source for a local plugin package (`__init__.py`). When `plugin_code`
+/// is non-empty, a directory named after the model's `python_module` is
+/// created under custom_models/ and the code is written as `__init__.py`
+/// inside it. When `plugin_code` is empty, only the YAML file is written.
+#[tauri::command]
+pub fn custom_create_model(
+    yaml_content: String,
+    plugin_code: Option<String>,
+) -> Result<serde_json::Value, AppError> {
+    let dir = custom_models_dir();
+    std::fs::create_dir_all(&dir)?;
+
+    // Parse YAML via yumo_core to get id + python_module
+    let spec = yumo_core::custom_models::parse_spec_from_str(
+        &yaml_content,
+        std::path::PathBuf::from("inline"),
+    ).map_err(|e| AppError::InvalidInput(format!("invalid YAML: {}", e)))?;
+    let id = &spec.id;
+    let python_module = &spec.python_module;
+
+    // Write YAML file: <id>.yaml
+    let yaml_path = dir.join(format!("{}.yaml", id));
+    std::fs::write(&yaml_path, &yaml_content)
+        .map_err(|e| AppError::Io(format!("write {}: {}", yaml_path.display(), e)))?;
+    info!("[cmd] custom_create_model yaml written: {}", yaml_path.display());
+
+    // Write plugin code if provided
+    if let Some(code) = plugin_code {
+        if !code.trim().is_empty() && !python_module.is_empty() {
+            let plugin_dir = dir.join(python_module);
+            std::fs::create_dir_all(&plugin_dir)?;
+            let init_path = plugin_dir.join("__init__.py");
+            std::fs::write(&init_path, &code)
+                .map_err(|e| AppError::Io(format!("write {}: {}", init_path.display(), e)))?;
+            info!("[cmd] custom_create_model plugin written: {}", init_path.display());
+        }
+    }
+
+    Ok(serde_json::json!({
+        "yamlPath": yaml_path.to_string_lossy(),
     }))
 }
 

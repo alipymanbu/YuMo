@@ -1,0 +1,51 @@
+# Mano-ASR (Local Plugin) — Custom model spec for VoiceInk (语墨)
+# Source: https://github.com/Mininglamp-AI/mano-asr
+#
+# This spec loads Mano-ASR directly in the daemon process via AutoModel —
+# no external HTTP service, no child process. The daemon loads the model
+# into memory, transcribes audio files, and frees everything on exit.
+#
+# 使用方式：
+#   1. 将 mano_asr.yaml 和 mano_asr/ 文件夹复制到 ~/.voiceink/custom_models/
+#   2. 打开语墨 → Settings → Models → Custom Models → 刷新
+#   3. 点击安装依赖 (pip install manoasr)
+#   4. 点击下载 (从 HuggingFace 拉模型权重 + clone mano-asr 仓库)
+#   5. 点击 "Use" 激活
+#
+# 模型权重从 HuggingFace 下载，mano-asr 仓库的 core/ 代码在 load() 时
+# 自动 clone（只需要一次）。全部在进程内运行，不启动任何外部服务。
+
+schema_version: 1
+id: custom-mano-asr
+name: Mano-ASR
+description: >
+  Mininglamp Mano-ASR 1.7B (8-bit), optimized for internet/IT office scenarios.
+  Accurately recognizes English terms, acronyms, product names, and mixed
+  Chinese-English speech. Loads directly in-process — no external service.
+size_mb: 1700
+languages:
+  zh: 中文
+  en: English
+speed: 8
+accuracy: 9
+recommended: true
+
+python_module: mano_asr
+pip_packages:
+  - git+https://github.com/Mininglamp-AI/mano-asr.git
+pip_import_name: manoasr
+
+download:
+  hf_repos:
+    - Mininglamp-2718/Mano-ASR-1.7B-Instruct-1.0-MLX-8bit
+  paths:
+    model_dir: "{repo_dirs[0]}"
+
+load:
+  function: mano_asr.load
+  kwargs:
+    model_dir: "{paths.model_dir}"
+    vad_model_dir: ""
+
+transcribe_method: generate
+language_param: language
