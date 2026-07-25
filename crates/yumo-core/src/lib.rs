@@ -16,6 +16,7 @@ pub mod vad;
 pub mod db;
 pub mod device_watcher;
 pub mod settings;
+pub mod voiceprint;
 pub mod state;
 
 pub mod audio_cue;

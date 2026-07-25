@@ -48,6 +48,7 @@
   "app.modelNotDownloadedDesc": "模型 \"{{name}}\" 尚未下载，请先下载。",
   "pipeline.recording": "录音中",
   "pipeline.processing": "处理中...",
+  "pipeline.filtering": "声纹过滤中...",
   "pipeline.transcribing": "转录中...",
   "pipeline.pasting": "粘贴中...",
   "recorder.preparing": "准备中...",
@@ -333,5 +334,15 @@
   "settings.spriteDeleteSuccess": "已删除",
   "settings.spriteLoadFailed": "加载精灵图失败",
   "settings.spriteImportFailed": "导入失败",
+  "settings.voiceprintSection": "声纹门控",
+  "settings.voiceprintEnable": "启用声纹过滤",
+  "settings.voiceprintThreshold": "相似度阈值",
+  "settings.voiceprintEnroll": "从历史录音建档",
+  "settings.voiceprintEnrolling": "建档中...",
+  "settings.voiceprintEnrollOk": "建档完成：{{nFiles}} 个录音，主簇 {{clusterSize}} 段语音",
+  "settings.voiceprintClear": "清除声纹",
+  "settings.voiceprintMissingProfile": "未建档",
+  "settings.voiceprintProfileOk": "已建档 · {{dim}} 维 · {{createdAt}}",
+  "settings.voiceprintFilterEmpty": "未检测到本人语音（声纹门控）",
   "settings.spriteProcessFailed": "处理失败"
 }

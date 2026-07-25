@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub enum PipelineState {
     Idle,
     Recording,
+    Filtering,
     Processing,
     Transcribing,
     Pasting,

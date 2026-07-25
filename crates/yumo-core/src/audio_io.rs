@@ -92,3 +92,18 @@ pub fn base64_encode(data: &[u8]) -> String {
     }
     out
 }
+
+/// Read a WAV file as AudioData (PCM f32 samples).
+pub fn read_wav_pcm(path: &Path) -> Result<(Vec<f32>, u32, u16), AppError> {
+    let mut reader = hound::WavReader::open(path).map_err(|e| {
+        error!("[audio_io] failed to open WAV at {:?}: {}", path, e);
+        AppError::Io(e.to_string())
+    })?;
+    let spec = reader.spec();
+    let samples: Vec<f32> = reader
+        .samples::<i16>()
+        .map(|s| s.map(|v| v as f32 / 32768.0))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| AppError::Io(e.to_string()))?;
+    Ok((samples, spec.sample_rate, spec.channels))
+}

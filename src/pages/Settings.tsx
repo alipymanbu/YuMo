@@ -51,6 +51,9 @@ interface AppSettings {
   autostart?: boolean;
   data_path?: string;
   ui_locale?: string;
+  voiceprint_enabled?: boolean;
+  voiceprint_threshold?: number;
+  voiceprint_filter_timeout?: number;
 }
 
 export default function Settings() {
@@ -107,12 +110,24 @@ export default function Settings() {
     } catch { /* logged */ }
   }, []);
 
+
+  // Voiceprint state
+  const [vpStatus, setVpStatus] = useState<Record<string, unknown> | null>(null);
+  const [vpEnrolling, setVpEnrolling] = useState(false);
+
+  const loadVoiceprintStatus = useCallback(async () => {
+    try {
+      const result = await invoke<Record<string, unknown>>('voiceprint_status');
+      setVpStatus(result);
+    } catch { /* worker not ready */ }
+  }, []);
   useEffect(() => {
     loadSettings();
     loadDevices();
     detectLegacyPath();
     loadPythonPath();
-  }, [loadSettings, loadDevices, detectLegacyPath, loadPythonPath]);
+    loadVoiceprintStatus();
+  }, [loadSettings, loadDevices, detectLegacyPath, loadPythonPath, loadVoiceprintStatus]);
 
   // Listen for device hot-plug/unplug events from backend
   useEffect(() => {
@@ -159,6 +174,33 @@ export default function Settings() {
 
   const [recordingHotkey, setRecordingHotkey] = useState(false);
   const hadNonModifierRef = useRef(false);
+
+
+  const handleVoiceprintEnroll = async () => {
+    setVpEnrolling(true);
+    try {
+      const result = await invoke<Record<string, unknown>>('voiceprint_enroll_from_history');
+      setVpEnrolling(false);
+      message.success(t('settings.voiceprintEnrollOk', {
+        nFiles: result.n_files_used ?? '?',
+        clusterSize: result.cluster_size ?? '?',
+      }));
+      await loadVoiceprintStatus();
+    } catch (e) {
+      setVpEnrolling(false);
+      message.error(formatError(e, t('settings.updateFailed')));
+    }
+  };
+
+  const handleVoiceprintClear = async () => {
+    try {
+      await invoke('voiceprint_clear');
+      message.success(t('common.cleared'));
+      await loadVoiceprintStatus();
+    } catch (e) {
+      message.error(formatError(e, t('settings.updateFailed')));
+    }
+  };
 
   // Data import state
   const [legacyPath, setLegacyPath] = useState<string | null>(null);
@@ -324,6 +366,66 @@ export default function Settings() {
           )}
           {settingRow(t('settings.customSoundFile'),
             <Input value={settings.custom_sound_file || ''} onChange={(e) => updateSetting('custom_sound_file', e.target.value)} placeholder={t('settings.customSoundFilePlaceholder')} style={{ width: 250 }} />,
+          )}
+          <div style={{ borderTop: '1px solid #f0f0f0', margin: '8px 0', padding: '8px 0' }}>
+            <Text strong>{t('settings.voiceprintSection')}</Text>
+          </div>
+          {settingRow(t('settings.voiceprintEnable'),
+            <Switch
+              checked={settings.voiceprint_enabled ?? false}
+              disabled={!vpStatus || !vpStatus.enrolled}
+              onChange={(v) => updateSetting('voiceprint_enabled', v)}
+            />,
+          )}
+          <div style={{ padding: '8px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text>{t('settings.voiceprintThreshold')}</Text>
+              <Text strong style={{ minWidth: 42, textAlign: 'right' }}>{(settings.voiceprint_threshold ?? 0.62).toFixed(2)}</Text>
+            </div>
+            <Slider
+              min={0.40}
+              max={0.90}
+              step={0.01}
+              value={settings.voiceprint_threshold ?? 0.62}
+              onChange={(v) => updateSetting('voiceprint_threshold', v)}
+            />
+          <div style={{ padding: '8px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text>超时 (秒)</Text>
+              <Text strong style={{ minWidth: 36, textAlign: 'right' }}>{settings.voiceprint_filter_timeout ?? 120}</Text>
+            </div>
+            <Slider
+              min={10}
+              max={600}
+              step={10}
+              value={settings.voiceprint_filter_timeout ?? 120}
+              onChange={(v) => updateSetting('voiceprint_filter_timeout', v)}
+            />
+          </div>
+          </div>
+          <Space>
+            <Button
+              type="primary"
+              onClick={handleVoiceprintEnroll}
+              loading={vpEnrolling}
+            >
+              {vpEnrolling ? t('settings.voiceprintEnrolling') : t('settings.voiceprintEnroll')}
+            </Button>
+            <Button danger onClick={handleVoiceprintClear}>
+              {t('settings.voiceprintClear')}
+            </Button>
+          </Space>
+          {vpStatus?.enrolled && vpStatus?.profile ? (
+            <Text type="success" style={{ display: 'block', marginTop: 4 }}>
+              {t('settings.voiceprintProfileOk', {
+                dim: (vpStatus.profile as Record<string, unknown>)?.dim ?? '?',
+                createdAt: (vpStatus.profile as Record<string, unknown>)?.created_at ?? '?',
+              })}
+            </Text>
+          ) : (
+            <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+              {t('settings.voiceprintMissingProfile')}
+            </Text>
           )}
         </Flex>
       ),

@@ -50,3 +50,48 @@ pub fn resolve_system_mute(settings: &HashMap<String, Value>) -> bool {
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
 }
+
+// ---------------------------------------------------------------------------
+// Voiceprint (声纹) settings
+// ---------------------------------------------------------------------------
+
+/// Default cosine similarity threshold for voiceprint gating.
+const DEFAULT_VOICEPRINT_THRESHOLD: f64 = 0.62;
+
+/// Minimum allowed threshold.
+const VOICEPRINT_THRESHOLD_MIN: f64 = 0.40;
+
+/// Maximum allowed threshold.
+const VOICEPRINT_THRESHOLD_MAX: f64 = 0.90;
+
+/// Resolve voiceprint_enabled from settings.
+/// Returns false when the key is absent or explicitly false.
+/// Profile file absence is checked separately at the call site.
+pub fn resolve_voiceprint_enabled(settings: &HashMap<String, Value>) -> bool {
+    settings
+        .get("voiceprint_enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+/// Resolve voiceprint_threshold, clamped to [0.40, 0.90], default 0.62.
+pub fn resolve_voiceprint_threshold(settings: &HashMap<String, Value>) -> f64 {
+    let raw = settings
+        .get("voiceprint_threshold")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(DEFAULT_VOICEPRINT_THRESHOLD);
+    raw.clamp(VOICEPRINT_THRESHOLD_MIN, VOICEPRINT_THRESHOLD_MAX)
+}
+
+const DEFAULT_VOICEPRINT_FILTER_TIMEOUT_SECS: u64 = 120;
+const FILTER_TIMEOUT_MIN_SECS: u64 = 10;
+const FILTER_TIMEOUT_MAX_SECS: u64 = 600;
+
+/// Resolve voiceprint_filter_timeout in seconds, clamped to [10, 600], default 120.
+pub fn resolve_voiceprint_filter_timeout_secs(settings: &HashMap<String, Value>) -> u64 {
+    let raw = settings
+        .get("voiceprint_filter_timeout")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(DEFAULT_VOICEPRINT_FILTER_TIMEOUT_SECS);
+    raw.clamp(FILTER_TIMEOUT_MIN_SECS, FILTER_TIMEOUT_MAX_SECS)
+}

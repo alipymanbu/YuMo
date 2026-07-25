@@ -48,6 +48,7 @@
   "app.modelNotDownloadedDesc": "Model \"{{name}}\" is not downloaded yet.",
   "pipeline.recording": "Recording",
   "pipeline.processing": "Processing...",
+  "pipeline.filtering": "Voiceprint filtering...",
   "pipeline.transcribing": "Transcribing...",
   "pipeline.pasting": "Pasting...",
   "recorder.preparing": "Preparing...",
@@ -333,5 +334,15 @@
   "settings.spriteDeleteSuccess": "Deleted",
   "settings.spriteLoadFailed": "Failed to load sprites",
   "settings.spriteImportFailed": "Import failed",
+  "settings.voiceprintSection": "Voiceprint Gate",
+  "settings.voiceprintEnable": "Enable Voiceprint Filter",
+  "settings.voiceprintThreshold": "Similarity Threshold",
+  "settings.voiceprintEnroll": "Enroll from History",
+  "settings.voiceprintEnrolling": "Enrolling...",
+  "settings.voiceprintEnrollOk": "Enrolled: {{nFiles}} files, main cluster {{clusterSize}} segments",
+  "settings.voiceprintClear": "Clear Voiceprint",
+  "settings.voiceprintMissingProfile": "Not enrolled",
+  "settings.voiceprintProfileOk": "Enrolled · {{dim}}-dim · {{createdAt}}",
+  "settings.voiceprintFilterEmpty": "No own voice detected (voiceprint gate)",
   "settings.spriteProcessFailed": "Processing failed"
 }

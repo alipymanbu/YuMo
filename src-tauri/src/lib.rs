@@ -216,13 +216,13 @@ pub fn run() {
                 sync_file("mlx_funasr_daemon.py", false);
                 sync_file("custom_model_shared.py", false);
                 sync_file("custom_model_worker.py", false);
+                sync_file("voiceprint_worker.py", false);
 
             }
 
             tray::setup_tray(app.handle())?;
 
             // Configure recorder window for transparent dragging on macOS
-            #[cfg(target_os = "macos")]
             {
                 use tauri::Manager;
                 if let Some(win) = app.get_webview_window("recorder") {
@@ -451,6 +451,10 @@ pub fn run() {
             commands::import_sprite_zip,
             commands::delete_sprite,
             commands::process_sprite_background,
+            // Voiceprint
+            commands::voiceprint_status,
+            commands::voiceprint_enroll_from_history,
+            commands::voiceprint_clear,
             // System locale
             commands::get_system_locale,
         ])

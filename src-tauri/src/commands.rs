@@ -13,6 +13,7 @@ use crate::state::AppContext;
 use crate::daemon::{DaemonManager, find_python};
 use crate::{audio_io, platform, text_processor, transcriber};
 use yumo_core::custom_worker;
+use yumo_core::voiceprint;
 use crate::platform::{audio_ctrl, paster, permissions};
 
 // ---------------------------------------------------------------------------
@@ -361,6 +362,120 @@ pub async fn stop_recording(
         }
     };
 
+    // 2.6 Voiceprint gate — filter non-speaker segments before ASR
+    let mut audio_for_asr = audio_data;
+    let (vp_enabled, vp_threshold, vp_timeout) = {
+        let settings_cache = state.settings_cache.read()
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let enabled = yumo_core::settings::resolve_voiceprint_enabled(&settings_cache);
+        let threshold = yumo_core::settings::resolve_voiceprint_threshold(&settings_cache);
+        let timeout = yumo_core::settings::resolve_voiceprint_filter_timeout_secs(&settings_cache);
+        (enabled, threshold, timeout)
+    };
+    if vp_enabled {
+        let profile_path = state.paths.data_dir.join("voiceprint/profile.npy");
+        if profile_path.exists() {
+            // Emit filtering state so frontend shows "声纹过滤中..."
+            {
+                let mut pipeline = state
+                    .pipeline_state
+                    .lock()
+                    .map_err(|e| AppError::Recording(e.to_string()))?;
+                *pipeline = PipelineState::Filtering;
+            }
+            let _ = app.emit("recording-state", serde_json::json!({"state": "filtering"}));
+
+            let tmp_dir = state.paths.data_dir.join("tmp");
+            let vp_output = tmp_dir.join("vp_filtered.wav");
+            let _ = std::fs::create_dir_all(&tmp_dir);
+
+            let input_path = recording_path.as_ref().map(std::path::PathBuf::from);
+
+            if let Some(ref input) = input_path {
+                if input.exists() {
+                    match find_python() {
+                        Ok(python) => {
+                            let worker = vp_worker_script_path(&state);
+                            let in_str = input.to_string_lossy().to_string();
+                            let out_str = vp_output.to_string_lossy().to_string();
+
+                            match voiceprint::filter_wav(
+                                &python,
+                                &worker,
+                                &in_str,
+                                &out_str,
+                                vp_threshold,
+                                std::time::Duration::from_secs(vp_timeout),
+                            ).await {
+                                Ok(resp) => {
+                                    let kept_ratio = resp.get("kept_ratio")
+                                        .and_then(|v| v.as_f64())
+                                        .unwrap_or(0.0);
+                                    let n_kept = resp.get("n_kept")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0);
+                                    let n_segments = resp.get("n_segments")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0);
+                                    info!("[voiceprint] filter done: kept_ratio={kept_ratio:.3} n_kept={n_kept} n_segments={n_segments}");
+
+                                    if n_segments == 0 {
+                                        // VAD found no speech — passthrough original, don't abort
+                                        info!("[voiceprint] VAD found no speech segments, passthrough");
+                                    } else if kept_ratio > 0.0 {
+                                        match audio_io::read_wav_pcm(&vp_output) {
+                                            Ok((samples, sr, ch)) => {
+                                                audio_for_asr.pcm_samples = samples;
+                                                audio_for_asr.sample_rate = sr;
+                                                audio_for_asr.channels = ch;
+                                            }
+                                            Err(e) => {
+                                                error!("[voiceprint] failed to read filtered WAV: {e}, passthrough");
+                                            }
+                                        }
+                                    } else {
+                                        info!("[voiceprint] no own voice detected, aborting");
+                                        let mut pipeline = state
+                                            .pipeline_state
+                                            .lock()
+                                            .map_err(|e| AppError::Recording(e.to_string()))?;
+                                        *pipeline = PipelineState::Idle;
+                                        let _ = app.emit("recording-state", serde_json::json!({"state": "idle"}));
+                                        let _ = app.emit(
+                                            "recording-error",
+                                            serde_json::json!({"error": "未检测到本人语音（声纹门控）"}),
+                                        );
+                                        // Cleanup before early return
+                                        let _ = hotkey::unregister_escape(&app);
+                                        crate::window_manager::WindowManager::new(app.clone()).hide("recorder");
+                                        return Ok(());
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("[voiceprint] filter failed, passthrough: {e}");
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("[voiceprint] find_python failed, passthrough: {e}");
+                        }
+                    }
+                }
+            }
+        } else {
+            info!("[voiceprint] enabled but no profile, passthrough");
+        }
+    }
+    // Back to Processing after voiceprint filter
+    {
+        let mut pipeline = state
+            .pipeline_state
+            .lock()
+            .map_err(|e| AppError::Recording(e.to_string()))?;
+        *pipeline = PipelineState::Processing;
+    }
+    let _ = app.emit("recording-state", serde_json::json!({"state": "processing"}));
+
     // 3. Update state -> Transcribing
     {
         let mut pipeline = state
@@ -373,7 +488,6 @@ pub async fn stop_recording(
         "recording-state",
         serde_json::json!({"state": "transcribing"}),
     );
-    info!("[pipeline] state -> Transcribing");
 
     // 4. Read settings
     let settings_map = {
@@ -477,8 +591,8 @@ pub async fn stop_recording(
             info!("[pipeline] transcribing via MLX daemon (language={})...", language);
             transcriber::transcribe_via_daemon(
                 &*daemon,
-                &audio_data.pcm_samples,
-                audio_data.sample_rate,
+                &audio_for_asr.pcm_samples,
+                audio_for_asr.sample_rate,
                 &language,
                 temperature,
                 max_tokens,
@@ -500,8 +614,8 @@ pub async fn stop_recording(
             }
             info!("[pipeline] loading whisper model...");
             let model_path_clone = model_path.clone();
-            let samples = audio_data.pcm_samples.clone();
-            let sr = audio_data.sample_rate;
+            let samples = audio_for_asr.pcm_samples.clone();
+            let sr = audio_for_asr.sample_rate;
             let lang = language.clone();
             let temp = temperature as f32;
             tokio::task::spawn_blocking(move || {
@@ -710,6 +824,7 @@ pub fn get_pipeline_state(state: State<AppContext>) -> Result<serde_json::Value,
     let s = match *pipeline {
         PipelineState::Idle => "idle",
         PipelineState::Recording => "recording",
+        PipelineState::Filtering => "filtering",
         PipelineState::Processing => "processing",
         PipelineState::Transcribing => "transcribing",
         PipelineState::Pasting => "pasting",
@@ -1863,6 +1978,72 @@ pub fn custom_remove(spec_path: String) -> Result<(), AppError> {
     Ok(())
 }
 
+/// Read a custom model's YAML + plugin code for editing.
+///
+/// Returns { yaml, pluginCode } where pluginCode is the content of
+/// `<python_module>/__init__.py` if it exists, or null if no plugin dir.
+#[tauri::command]
+pub fn custom_read_model(spec_path: String) -> Result<serde_json::Value, AppError> {
+    let yaml = std::fs::read_to_string(&spec_path)
+        .map_err(|e| AppError::Io(format!("read {}: {}", spec_path, e)))?;
+
+    // Parse to find python_module, then look for <python_module>/__init__.py
+    let spec = yumo_core::custom_models::parse_spec_from_file(
+        std::path::Path::new(&spec_path),
+    )?;
+    let dir = std::path::Path::new(&spec_path).parent().unwrap_or(std::path::Path::new("."));
+    let plugin_path = dir.join(&spec.python_module).join("__init__.py");
+    let plugin_code = if plugin_path.exists() {
+        Some(std::fs::read_to_string(&plugin_path)
+            .map_err(|e| AppError::Io(format!("read {}: {}", plugin_path.display(), e)))?)
+    } else {
+        None
+    };
+
+    Ok(serde_json::json!({
+        "yaml": yaml,
+        "pluginCode": plugin_code,
+    }))
+}
+
+/// Save (overwrite) a custom model's YAML + plugin code.
+///
+/// `yaml_content` overwrites the YAML file. `plugin_code` (if non-empty)
+/// overwrites `<python_module>/__init__.py`. The YAML's `python_module`
+/// field determines the plugin directory name.
+#[tauri::command]
+pub fn custom_save_model(
+    spec_path: String,
+    yaml_content: String,
+    plugin_code: Option<String>,
+) -> Result<(), AppError> {
+    // Parse new YAML to get python_module (may have changed)
+    let spec = yumo_core::custom_models::parse_spec_from_str(
+        &yaml_content,
+        std::path::PathBuf::from(&spec_path),
+    )?;
+
+    // Write YAML
+    std::fs::write(&spec_path, &yaml_content)
+        .map_err(|e| AppError::Io(format!("write {}: {}", spec_path, e)))?;
+    info!("[cmd] custom_save_model yaml saved: {}", spec_path);
+
+    // Write plugin code if provided
+    if let Some(code) = plugin_code {
+        if !code.trim().is_empty() {
+            let dir = std::path::Path::new(&spec_path).parent().unwrap_or(std::path::Path::new("."));
+            let plugin_dir = dir.join(&spec.python_module);
+            std::fs::create_dir_all(&plugin_dir)?;
+            let init_path = plugin_dir.join("__init__.py");
+            std::fs::write(&init_path, &code)
+                .map_err(|e| AppError::Io(format!("write {}: {}", init_path.display(), e)))?;
+            info!("[cmd] custom_save_model plugin saved: {}", init_path.display());
+        }
+    }
+
+    Ok(())
+}
+
 /// is-downloaded check — sidecar paths.json existence.
 #[tauri::command]
 pub fn custom_is_downloaded(id: String) -> bool {
@@ -2270,6 +2451,84 @@ mod tests {
     fn test_base64_encode_binary() {
         assert_eq!(base64_encode(&[0x00, 0xFF, 0x80]), "AP+A");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Voiceprint (声纹) — speaker verification gating
+// ---------------------------------------------------------------------------
+
+fn vp_worker_script_path(ctx: &AppContext) -> std::path::PathBuf {
+    ctx.paths.data_dir.join("voiceprint_worker.py")
+}
+
+/// Query voiceprint status: enrolled, dim, models_ready, profile metadata.
+#[tauri::command]
+pub async fn voiceprint_status(
+    state: State<'_, AppContext>,
+) -> Result<serde_json::Value, AppError> {
+    let python = find_python()?;
+    let worker = vp_worker_script_path(&state);
+
+    let (enabled, threshold) = {
+        let settings = state.settings_cache.read().map_err(|e| AppError::Database(e.to_string()))?;
+        (
+            yumo_core::settings::resolve_voiceprint_enabled(&settings),
+            yumo_core::settings::resolve_voiceprint_threshold(&settings),
+        )
+    };
+
+    let resp = voiceprint::status(&python, &worker, std::time::Duration::from_secs(30)).await?;
+
+    let mut result = serde_json::Map::new();
+    result.insert("enrolled".to_string(), resp.get("enrolled").cloned().unwrap_or(Value::Bool(false)));
+    result.insert("dim".to_string(), resp.get("dim").cloned().unwrap_or(Value::Null));
+    result.insert("profile".to_string(), resp.get("profile").cloned().unwrap_or(Value::Null));
+    result.insert("models_ready".to_string(), resp.get("models_ready").cloned().unwrap_or(Value::Bool(false)));
+    result.insert(
+        "enabled".to_string(),
+        Value::Bool(enabled),
+    );
+    result.insert(
+        "threshold".to_string(),
+        Value::Number(serde_json::Number::from_f64(threshold).unwrap_or(serde_json::Number::from(0))),
+    );
+
+    Ok(Value::Object(result))
+}
+
+/// Enroll speaker profile from history recordings (long-running, up to 30 min).
+#[tauri::command]
+pub async fn voiceprint_enroll_from_history(
+    state: State<'_, AppContext>,
+) -> Result<serde_json::Value, AppError> {
+    let python = find_python()?;
+    let worker = vp_worker_script_path(&state);
+    let recordings_dir = state.paths.recordings_dir.to_string_lossy().to_string();
+
+    // Ensure models first (short timeout)
+    voiceprint::ensure_models(&python, &worker, std::time::Duration::from_secs(120)).await?;
+
+    // Enroll from history (long timeout)
+    let resp = voiceprint::enroll_from_history(
+        &python,
+        &worker,
+        &recordings_dir,
+        800,
+        std::time::Duration::from_secs(1800),
+    ).await?;
+
+    Ok(Value::Object(resp))
+}
+
+/// Clear enrolled voiceprint profile (keep models).
+#[tauri::command]
+pub async fn voiceprint_clear(
+    state: State<'_, AppContext>,
+) -> Result<(), AppError> {
+    let python = find_python()?;
+    let worker = vp_worker_script_path(&state);
+    voiceprint::clear(&python, &worker, std::time::Duration::from_secs(10)).await?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

@@ -52,6 +52,7 @@
     "resources": [
       "resources/mlx_funasr_daemon.py",
       "resources/custom_model_shared.py",
+      "resources/voiceprint_worker.py",
       "resources/custom_model_worker.py",
       "resources/custom_model_examples/*"
     ],
