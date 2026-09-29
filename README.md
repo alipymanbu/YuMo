@@ -1,172 +1,26 @@
-# 语墨 YuMo
+# Yumo
 
-语音转文字桌面工具，支持本地模型和云端服务，说完即粘贴。
+本仓库是「Yumo」的安卓版本获取入口，附使用资料索引。
 
-支持 **macOS**、**Windows**、**Linux**。
+## 安装文件资源（夸克网盘）
 
-## 功能
+> **Yumo 安装文件资源（夸克网盘）**：[https://pan.quark.cn/s/3b70ba0d3fda](https://pan.quark.cn/s/3b70ba0d3fda)
 
-- **一键录音转写** — 全局快捷键触发，转写完自动粘贴到光标位置
-- **多模型支持** — 本地 Whisper、Apple Silicon GPU 加速（MLX）、云端 API
-- **AI 增强** — 接入 OpenAI / Anthropic / Ollama，自定义 prompt 润色转写结果
-- **语音活动检测（VAD）** — 自动识别语音片段，过滤静音
-- **降噪** — 内置 DTLN 降噪处理
-- **长音频分片** — 自动 VAD 静音点切分，支持长时间录音转写
-- **多语言转写** — 中、英、日、韩、法、德、西、俄、葡、意等 10+ 语言
-- **中英双语界面** — 支持中文和英文 UI，可跟随系统语言自动切换
-- **幻觉过滤** — 自动检测并过滤 Whisper 无效输出（如重复 token、纯符号等）
-- **统计面板** — 可视化展示转写次数、时长、节省击键数等统计数据
-- **录音精灵图** — 自定义录音浮窗动画，支持导入文件夹或 ZIP 包
-- **数据迁移** — 支持从 VoiceInk macOS 版导入历史转写记录
+## 官方项目
 
-## 支持的模型
+- 上游项目：[leaf0412/YuMo](https://github.com/leaf0412/YuMo)
 
-### 本地模型（离线可用）
+## 更多资料
 
-| 模型 | 大小 | 说明 |
-|------|------|------|
-| Whisper Tiny / Base / Small / Medium / Large v3 | 75MB - 3GB | CPU 推理，英文或多语言 |
-| MLX Whisper Large v3 / Distil Large v3 / Small | 500MB - 3GB | Apple Silicon GPU 加速 |
-| MLX Fun-ASR Nano (8-bit / BF16) | 2 - 4GB | GPU 加速，多语言 |
-| Qwen3-ASR 0.6B (8-bit / BF16) | 700MB - 1.2GB | GPU 加速，30+ 语言 |
+- [下载与安装教程](https://github.com/alipymanbu/Android/blob/master/%E5%AE%98%E7%BD%91%E7%89%88APP%E4%B8%8B%E8%BD%BD/Yumo/%E4%B8%8B%E8%BD%BD%E4%B8%8E%E5%AE%89%E8%A3%85%E6%95%99%E7%A8%8B.md)
+- [免费角色与解锁说明](https://github.com/alipymanbu/Android/blob/master/%E5%AE%98%E7%BD%91%E7%89%88APP%E4%B8%8B%E8%BD%BD/Yumo/%E5%85%8D%E8%B4%B9%E8%A7%92%E8%89%B2%E4%B8%8E%E8%A7%A3%E9%94%81%E8%AF%B4%E6%98%8E.md)
+- [刘海悬挂角色设置步骤](https://github.com/alipymanbu/Android/blob/master/%E5%AE%98%E7%BD%91%E7%89%88APP%E4%B8%8B%E8%BD%BD/Yumo/%E5%88%98%E6%B5%B7%E6%82%AC%E6%8C%82%E8%A7%92%E8%89%B2%E8%AE%BE%E7%BD%AE%E6%AD%A5%E9%AA%A4.md)
+- [常见问题与排查方法](https://github.com/alipymanbu/Android/blob/master/%E5%AE%98%E7%BD%91%E7%89%88APP%E4%B8%8B%E8%BD%BD/Yumo/%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98%E4%B8%8E%E6%8E%92%E6%9F%A5%E6%96%B9%E6%B3%95.md)
+- [状态栏宠物动画与互动](https://github.com/alipymanbu/Android/blob/master/%E5%AE%98%E7%BD%91%E7%89%88APP%E4%B8%8B%E8%BD%BD/Yumo/%E7%8A%B6%E6%80%81%E6%A0%8F%E5%AE%A0%E7%89%A9%E5%8A%A8%E7%94%BB%E4%B8%8E%E4%BA%92%E5%8A%A8.md)
+- [耗电与后台常驻](https://github.com/alipymanbu/Android/blob/master/%E5%AE%98%E7%BD%91%E7%89%88APP%E4%B8%8B%E8%BD%BD/Yumo/%E8%80%97%E7%94%B5%E4%B8%8E%E5%90%8E%E5%8F%B0%E5%B8%B8%E9%A9%BB.md)
+- [自定义头像悬挂角色制作](https://github.com/alipymanbu/Android/blob/master/%E5%AE%98%E7%BD%91%E7%89%88APP%E4%B8%8B%E8%BD%BD/Yumo/%E8%87%AA%E5%AE%9A%E4%B9%89%E5%A4%B4%E5%83%8F%E6%82%AC%E6%8C%82%E8%A7%92%E8%89%B2%E5%88%B6%E4%BD%9C.md)
+- [全部软件目录](https://github.com/alipymanbu/Android/blob/master/%E5%85%A8%E9%83%A8%E8%BD%AF%E4%BB%B6%E7%9B%AE%E5%BD%95.md)
 
-### 云端模型（需 API Key）
+---
 
-Groq Whisper · Deepgram Nova-2 · ElevenLabs Scribe · Mistral ASR · Gemini ASR · Soniox ASR
-
-## 安装
-
-### 从 Release 下载
-
-前往 [Releases](https://github.com/leaf0412/YuMo/releases) 下载适合你平台的安装包：
-
-| 平台 | 格式 | 说明 |
-|------|------|------|
-| macOS (ARM) | `.dmg` | Apple Silicon Mac，推荐 |
-| macOS (Intel) | `.dmg` | Intel Mac |
-| Windows | `.exe` | Windows 10+ |
-| Linux | `.deb` | Ubuntu 22.04+，依赖 `libwebkit2gtk-4.1`（apt 自动拉取） |
-
-> macOS 首次打开可能被 Gatekeeper 拦截，右键点击 → 打开即可。
-
-### 从源码构建
-
-#### 环境要求
-
-- Node.js 20+
-- pnpm 9+
-- Rust 1.80+
-
-#### 构建
-
-```bash
-pnpm install
-pnpm tauri dev          # 开发模式
-pnpm tauri build        # 构建发布
-```
-
-## 使用指南
-
-### 首次使用
-
-启动后会进入**引导向导**，按步骤完成设置：
-
-1. **授予权限** — 授予麦克风和辅助功能权限（macOS）
-2. **选择模型** — 选择一个模型并下载
-   - 推荐 Apple Silicon 用户选择 **MLX Fun-ASR Nano (8-bit)**（速度快、质量好）
-   - 没有 Apple Silicon 可选 **Whisper Base**（体积小）或云端模型
-3. **设置快捷键** — 录制全局快捷键
-4. **开始使用** — 按快捷键录音，松开后自动转写并粘贴
-
-### 录音流程
-
-```
-按下快捷键 → 录音中 → 再按快捷键 → 转写中 → [AI 增强] → 粘贴到光标
-```
-
-录音过程中连按两次 ESC 可取消录音。
-
-### 模型管理
-
-- **本地模型**：点击下载，等待完成后选中即可使用
-- **MLX 模型**：首次使用会自动安装 Python 环境和依赖（约 1-2 分钟），之后自动下载模型
-- **云端模型**：填入对应服务商的 API Key 后即可使用
-
-### AI 增强（可选）
-
-在「增强」页面：
-
-1. 选择 LLM 服务商（OpenAI / Anthropic / Ollama）
-2. 填入 API Key
-3. 选择或创建 prompt（如"翻译为英文"、"修正语法"、"总结要点"）
-4. 开启增强开关
-
-转写结果会先经过 LLM 处理再粘贴。
-
-### 设置说明
-
-| 设置 | 说明 |
-|------|------|
-| 界面语言 | 中文 / English / 跟随系统 |
-| 音频设备 | 选择录音使用的麦克风 |
-| 转写语言 | 转写语言（auto 自动检测，或指定语言） |
-| 降噪 | 开启录音降噪处理 |
-| 静音超时 | 连续静音多久后停止录音（100-5000ms） |
-| 录音时静音系统 | 录音期间静音系统音频输出 |
-| 自动大写 | 自动将句首字母大写 |
-| 精灵图 | 自定义录音浮窗动画，可调整大小 |
-| 开机自启 | 登录时自动启动（macOS） |
-| 数据导入 | 从 VoiceInk macOS 版导入历史记录 |
-
-## 数据存储
-
-所有数据存储在 `~/.voiceink/`（macOS/Linux）或 `%APPDATA%\YuMo`（Windows）：
-
-```
-~/.voiceink/
-├── log.txt              # 应用日志
-├── data.db              # 数据库（设置、转写记录）
-├── models/              # 下载的模型文件
-├── recordings/          # 录音 WAV 文件
-├── denoiser/            # DTLN 降噪模型
-├── venv/                # Python 虚拟环境（MLX 模型用）
-└── sprites/             # 录音动画精灵图
-```
-
-## 项目架构
-
-```
-voiceink-tauri/
-├── crates/yumo-core/       # Rust 核心库（零 Tauri 依赖）
-│   └── src/platform/       # 平台抽象层
-│       ├── traits.rs       # 5 个 trait 定义
-│       ├── macos/          # macOS 实现（CoreAudio）
-│       ├── windows/        # Windows 实现（cpal + WASAPI）
-│       └── linux/          # Linux 实现（cpal + PulseAudio）
-├── src/                    # 前端（React + TypeScript）
-│   ├── bridge/             # Tauri 桥接层
-│   └── lib/events.ts       # 事件系统
-├── src-tauri/              # Tauri 壳（薄封装层）
-└── .github/workflows/      # CI/CD（多平台矩阵构建）
-```
-
-### 调用链
-
-```
-前端 → bridge/tauri.ts → invoke → src-tauri/commands.rs → yumo-core
-```
-
-## 技术栈
-
-- **前端**：React 19 + TypeScript + Ant Design + Zustand + i18next
-- **核心库**：Rust (`yumo-core` crate)
-- **壳**：Tauri v2
-- **转写**：whisper.cpp (CPU) + MLX (GPU) + 云端 API
-- **音频**：CoreAudio (macOS) / cpal (Windows/Linux)
-- **凭据**：Keychain (macOS) / Credential Manager (Windows) / Secret Service (Linux)
-- **数据库**：SQLite (rusqlite)
-- **CI/CD**：GitHub Actions 矩阵构建
-
-## 许可
-
-MIT
+> 本仓库由上游项目 fork 而来，原始说明见[上游仓库](https://github.com/leaf0412/YuMo)。
